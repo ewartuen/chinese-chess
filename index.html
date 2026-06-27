@@ -161,19 +161,19 @@
     <script>
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         
-        // 【修改：全面改為行棋「嘟」一聲】
+        // 雙方落子「嘟」一聲
         function playBeepSound() {
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
             osc.type = 'sine';
-            osc.frequency.setValueAtTime(600, audioCtx.currentTime); // 乾脆利落的電子嘟聲
+            osc.frequency.setValueAtTime(600, audioCtx.currentTime); 
             gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
-            gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.08); // 0.08秒即完
+            gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.08); 
             osc.connect(gain); gain.connect(audioCtx.destination);
             osc.start(); osc.stop(audioCtx.currentTime + 0.08);
         }
 
-        // 大獲全勝音效
+        // 大獲全勝和弦音效
         function playVictorySound() {
             const notes = [523.25, 659.25, 783.99, 1046.50]; 
             notes.forEach((freq, index) => {
@@ -226,24 +226,55 @@
 
             statusDiv.innerText = "正在連線到雲端伺服器...";
             const clientId = "client_" + Math.random().toString(36).substring(7);
+            
+            // 使用 HiveMQ 官方安全加密 WebSocket 埠口 8884
             client = new Paho.MQTT.Client("broker.hivemq.com", Number(8884), clientId);
 
-client.onConnectionLost = () => { statusDiv.innerText = "連線中斷，請重試！"; };
-client.onMessageArrived = (message) => {
-    // ...保持你原本內部的代碼不變...
-};
+            client.onConnectionLost = () => { 
+                statusDiv.innerText = "連線中斷，請重試！"; 
+            };
 
-// 連線設定改為 true
-client.connect({
-    onSuccess: () => {
-        client.subscribe("xiangqi/room/" + roomNumber);
-        document.getElementById('connection-panel').style.background = "#e6ffe6";
-        statusDiv.innerText = `已入房間【${roomNumber}】| 你執【${mySide === 'R' ? '紅棋' : '黑棋'}】`;
-        renderBoard();
-        sendMoveData(null);
-    },
-    useSSL: true // 🌟 關鍵：強制開啟安全加密，GitHub 才會放行！
-});
+            // 接收網絡端傳輸同步
+            client.onMessageArrived = (message) => {
+                const data = JSON.parse(message.payloadString);
+                if (data.sender === clientId) return; 
+                
+                if (data.type === 'MOVE') {
+                    board = data.board;
+                    turn = data.turn;
+                    gameActive = data.gameActive;
+                    selectedIndex = null;
+                    validMoves = [];
+                    renderBoard();
+                    
+                    playBeepSound(); 
+                    
+                    if (!gameActive) showGameOver(data.winner);
+                } else if (data.type === 'RESET') {
+                    board = JSON.parse(JSON.stringify(initialBoard));
+                    turn = 'R';
+                    gameActive = true;
+                    selectedIndex = null;
+                    validMoves = [];
+                    document.getElementById('game-over-modal').style.display = 'none';
+                    renderBoard();
+                }
+            };
+
+            // 建立 WSS 安全加密連線
+            client.connect({
+                onSuccess: () => {
+                    client.subscribe("xiangqi/room/" + roomNumber);
+                    document.getElementById('connection-panel').style.background = "#e6ffe6";
+                    statusDiv.innerText = `已入房間【${roomNumber}】| 你執【${mySide === 'R' ? '紅棋' : '黑棋'}】`;
+                    renderBoard();
+                    sendMoveData(null); 
+                },
+                onFailure: () => {
+                    statusDiv.innerText = "連線失敗，請重新整理網頁再試！";
+                },
+                useSSL: true 
+            });
         }
 
         function sendMoveData(finalWinner) {
@@ -253,7 +284,7 @@ client.connect({
                     board: board,
                     turn: turn,
                     gameActive: gameActive,
-                    winner: finalWinner, // 傳送真實計算出的贏家
+                    winner: finalWinner, 
                     sender: client.clientId
                 });
                 const message = new Paho.MQTT.Message(payload);
@@ -270,7 +301,7 @@ client.connect({
             }
         }
 
-        // 精準判定勝負
+        // 判定勝負
         function checkGameOver() {
             let hasRedKing = false;
             let hasBlackKing = false;
@@ -280,8 +311,8 @@ client.connect({
                     if (board[r][c] === 'B將') hasBlackKing = true;
                 }
             }
-            if (!hasRedKing) return 'B'; // 沒紅帥 = 黑棋勝
-            if (!hasBlackKing) return 'R'; // 沒黑將 = 紅棋勝
+            if (!hasRedKing) return 'B'; 
+            if (!hasBlackKing) return 'R'; 
             return null;
         }
 
@@ -308,7 +339,7 @@ client.connect({
             }
         }
 
-        // 規則驗證 (不變)
+        // 棋子規則驗證
         function isValidMove(fromR, fromC, toR, toC) {
             const piece = board[fromR][fromC];
             if (!piece) return false;
@@ -386,14 +417,14 @@ client.connect({
             return moves;
         }
 
-        // 動態格線生成
+        // 動態格線與楚河漢界生成
         function renderBoardLines() {
             linesGrid.innerHTML = '';
             let html = '';
             const isBlackView = (mySide === 'B');
             for(let i=0; i<32; i++) html += '<div class="cell"></div>';
             
-            // 【修復 1】利用「文字倒序 + 元素旋轉」雙重修正法，確保黑棋看到的楚河漢界 100% 絕不顛倒
+            // 雙重翻轉修正，確保黑棋看到的楚河漢界 100% 正立
             if (isBlackView) {
                 html += `<div class="river"><span class="rotate-180">界漢</span>&nbsp;&nbsp;<span class="rotate-180">河楚</span></div>`;
             } else {
@@ -404,7 +435,7 @@ client.connect({
             linesGrid.innerHTML = html;
         }
 
-        // 動態渲染棋子與點擊事件
+        // 渲染棋子與處理視角
         function renderBoard() {
             renderBoardLines();
             piecesLayer.innerHTML = '';
@@ -459,9 +490,9 @@ client.connect({
                     board[row][col] = board[selectedIndex.row][selectedIndex.col];
                     board[selectedIndex.row][selectedIndex.col] = null;
                     
-                    playBeepSound(); // 本地行棋成功響「嘟」聲
+                    playBeepSound(); // 本地落子「嘟」聲
 
-                    // 即時檢查勝負
+                    // 檢查勝負
                     const winner = checkGameOver();
                     if (winner) {
                         gameActive = false;
@@ -474,7 +505,7 @@ client.connect({
                     renderBoard();
                     
                     if (mySide !== 'BOTH') {
-                        sendMoveData(winner); // 將正確的 winner 傳給對方
+                        sendMoveData(winner); 
                     }
                     
                     if (!gameActive) {

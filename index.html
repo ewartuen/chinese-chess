@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>中國象棋 - 完美音效對齊版</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: "Microsoft JhengHei", sans-serif; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            background-color: #f0f0f0; 
+            width: 100vw;
+            height: 100vh;
+            padding: 8px;
+            overflow: hidden;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        h1 { font-size: 1.2rem; color: #333; margin-bottom: 5px; }
+        
+        #connection-panel { 
+            background: #fff; 
+            padding: 8px 12px; 
+            border-radius: 8px; 
+            margin-bottom: 8px; 
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1); 
+            text-align: center; 
+            width: 100%;
+            max-width: 400px;
+        }
+        #status { font-size: 0.9rem; margin-bottom: 6px; font-weight: bold; color: #cc0000; }
+        input, button { padding: 6px 10px; font-size: 0.85rem; border-radius: 4px; border: 1px solid #ccc; margin: 2px; }
+        button { background: #cc0000; color: white; cursor: pointer; border: none; font-weight: bold; }
+        
+        /* 棋盤大容器 */
+        .chessboard-container { 
+            position: relative; 
+            background-color: #fabd66; 
+            border: 4px double #8a5216; 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2); 
+            border-radius: 4px;
+            width: 96vw; 
+            max-width: 410px;
+            height: calc(96vw * 1.11); 
+            max-height: 455px;
+            padding: calc((96vw / 9) / 2) calc((96vw / 8) / 2);
+        }
+        @media (min-width: 410px) {
+            .chessboard-container { padding: 22.7px 25.6px; }
+        }
+
+        /* 格線網格 */
+        .board-lines { 
+            display: grid; 
+            grid-template-columns: repeat(8, 1fr); 
+            grid-template-rows: repeat(9, 1fr); 
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0; left: 0;
+            padding: calc((100% / 10) / 2) calc((100% / 9) / 2);
+            pointer-events: none;
+        }
+        .cell { border: 1px solid #8a5216; }
+        
+        .river { 
+            grid-column: span 8; 
+            border: 1px solid #8a5216; 
+            text-align: center; 
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem; 
+            font-weight: bold; 
+            color: #8a5216; 
+            letter-spacing: 8px; 
+        }
+        
+        /* 棋子與點擊事件圖層 */
+        .pieces-layer { 
+            position: absolute; 
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            display: grid; 
+            grid-template-columns: repeat(9, 1fr); 
+            grid-template-rows: repeat(10, 1fr); 
+            z-index: 10;
+        }
+        
+        .intersection { 
+            width: 100%; height: 100%; 
+            display: flex; justify-content: center; align-items: center; 
+            cursor: pointer; position: relative; 
+        }
+        
+        .piece { 
+            width: 88%; height: 88%; 
+            border-radius: 50%; 
+            background-color: #f7e6c4; 
+            border: 1.5px solid #555; 
+            display: flex; justify-content: center; align-items: center; 
+            font-size: 1.35rem; font-weight: bold; 
+            box-shadow: 1px 1px 4px rgba(0,0,0,0.3); 
+            z-index: 20; 
+            pointer-events: none;
+        }
+        .piece.red { color: #cc0000; border-color: #cc0000; }
+        .piece.black { color: #000000; border-color: #000000; }
+        
+        .intersection.selected .piece { transform: scale(1.1); box-shadow: 0 0 8px #ff9900; border-color: #ff9900; }
+        .intersection.highlight::after { 
+            content: ''; width: 12px; height: 12px; 
+            background-color: rgba(0, 180, 0, 0.75); border-radius: 50%; 
+            position: absolute; z-index: 15; 
+        }
+
+        .rotate-180 { display: inline-block; transform: rotate(180deg); }
+
+        /* 彈出勝負視窗 */
+        #game-over-modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0,0,0,0.7); z-index: 999; justify-content: center; align-items: center;
+            flex-direction: column; color: white;
+        }
+        #game-over-box { background: white; padding: 25px; border-radius: 12px; text-align: center; color: #333; max-width: 300px; width: 80%; }
+        #game-over-title { font-size: 1.6rem; font-weight: bold; margin-bottom: 15px; color: #cc0000; }
+    </style>
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2352376757469824"
+     crossorigin="anonymous"></script>
+</head>
+<body>
+
+    <h1>中國象棋連線版</h1>
+    
+    <div id="connection-panel">
+        <div id="status">【單機試玩】輸入自訂房號即可連線</div>
+        <div>
+            <input type="number" id="room-input" placeholder="輸入自訂房號 (如 7788)" style="width: 160px; text-align: center;">
+            <button onclick="joinRoom('R')">執紅入房</button>
+            <button onclick="joinRoom('B')" style="background:#333;">執黑入房</button>
+        </div>
+    </div>
+
+    <div class="chessboard-container">
+        <div class="board-lines" id="lines-grid"></div>
+        <div class="pieces-layer" id="pieces-layer"></div>
+    </div>
+
+    <div id="game-over-modal">
+        <div id="game-over-box">
+            <div id="game-over-title">紅方大獲全勝！</div>
+            <button onclick="restartGame()" style="padding: 8px 20px; font-size: 1rem;">重新棋局</button>
+        </div>
+    </div>
+
+    <script>
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // 【修改：全面改為行棋「嘟」一聲】
+        function playBeepSound() {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(600, audioCtx.currentTime); // 乾脆利落的電子嘟聲
+            gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+            gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.08); // 0.08秒即完
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.08);
+        }
+
+        // 大獲全勝音效
+        function playVictorySound() {
+            const notes = [523.25, 659.25, 783.99, 1046.50]; 
+            notes.forEach((freq, index) => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime + index * 0.08);
+                gain.gain.setValueAtTime(0.2, audioCtx.currentTime + index * 0.08);
+                gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.5 + index * 0.08);
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.start(audioCtx.currentTime + index * 0.08);
+                osc.stop(audioCtx.currentTime + 0.5 + index * 0.08);
+            });
+        }
+
+        const initialBoard = [
+            ['B車', 'B馬', 'B象', 'B士', 'B將', 'B士', 'B象', 'B馬', 'B車'],
+            [ null,  null,  null,  null,  null,  null,  null,  null,  null],
+            [ null, 'B砲',  null,  null,  null,  null,  null, 'B砲',  null],
+            ['B卒',  null, 'B卒',  null, 'B卒',  null, 'B卒',  null, 'B卒'],
+            [ null,  null,  null,  null,  null,  null,  null,  null,  null],
+            [ null,  null,  null,  null,  null,  null,  null,  null,  null],
+            ['R兵',  null, 'R兵',  null, 'R兵',  null, 'R兵',  null, 'R兵'],
+            [ null, 'R砲',  null,  null,  null,  null,  null, 'R砲',  null],
+            [ null,  null,  null,  null,  null,  null,  null,  null,  null],
+            ['R車', 'R馬', 'R相', 'R仕', 'R帥', 'R仕', 'R相', 'R馬', 'R車']
+        ];
+
+        let board = JSON.parse(JSON.stringify(initialBoard));
+        let turn = 'R'; 
+        let selectedIndex = null;
+        let validMoves = []; 
+        let gameActive = true;
+
+        let client = null;
+        let roomNumber = "";
+        let mySide = 'BOTH'; 
+
+        const piecesLayer = document.getElementById('pieces-layer');
+        const linesGrid = document.getElementById('lines-grid');
+        const statusDiv = document.getElementById('status');
+
+        function joinRoom(side) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
+            const room = document.getElementById('room-input').value.trim();
+            if(!room) return alert("請輸入房號！");
+            roomNumber = room;
+            mySide = side;
+
+            statusDiv.innerText = "正在連線到雲端伺服器...";
+            const clientId = "client_" + Math.random().toString(36).substring(7);
+            client = new Paho.MQTT.Client("broker.hivemq.com", Number(8000), clientId);
+
+            client.onConnectionLost = () => { statusDiv.innerText = "連線中斷，請重試！"; };
+            client.onMessageArrived = (message) => {
+                const data = JSON.parse(message.payloadString);
+                if (data.sender === clientId) return;
+                
+                if (data.type === 'MOVE') {
+                    board = data.board;
+                    turn = data.turn;
+                    gameActive = data.gameActive;
+                    selectedIndex = null;
+                    validMoves = [];
+                    renderBoard();
+                    
+                    playBeepSound(); // 對方行棋後，自己本地響「嘟」聲
+                    
+                    if (!gameActive) showGameOver(data.winner);
+                } else if (data.type === 'RESET') {
+                    board = JSON.parse(JSON.stringify(initialBoard));
+                    turn = 'R';
+                    gameActive = true;
+                    selectedIndex = null;
+                    validMoves = [];
+                    document.getElementById('game-over-modal').style.display = 'none';
+                    renderBoard();
+                }
+            };
+
+            client.connect({
+                onSuccess: () => {
+                    client.subscribe("xiangqi/room/" + roomNumber);
+                    document.getElementById('connection-panel').style.background = "#e6ffe6";
+                    statusDiv.innerText = `已入房間【${roomNumber}】| 你執【${mySide === 'R' ? '紅棋' : '黑棋'}】`;
+                    renderBoard();
+                    sendMoveData(null);
+                },
+                useSSL: false
+            });
+        }
+
+        function sendMoveData(finalWinner) {
+            if (client && client.isConnected()) {
+                const payload = JSON.stringify({
+                    type: 'MOVE',
+                    board: board,
+                    turn: turn,
+                    gameActive: gameActive,
+                    winner: finalWinner, // 傳送真實計算出的贏家
+                    sender: client.clientId
+                });
+                const message = new Paho.MQTT.Message(payload);
+                message.destinationName = "xiangqi/room/" + roomNumber;
+                client.send(message);
+            }
+        }
+
+        function sendResetSignal() {
+            if (client && client.isConnected()) {
+                const message = new Paho.MQTT.Message(JSON.stringify({ type: 'RESET' }));
+                message.destinationName = "xiangqi/room/" + roomNumber;
+                client.send(message);
+            }
+        }
+
+        // 精準判定勝負
+        function checkGameOver() {
+            let hasRedKing = false;
+            let hasBlackKing = false;
+            for (let r = 0; r < 10; r++) {
+                for (let c = 0; c < 9; c++) {
+                    if (board[r][c] === 'R帥') hasRedKing = true;
+                    if (board[r][c] === 'B將') hasBlackKing = true;
+                }
+            }
+            if (!hasRedKing) return 'B'; // 沒紅帥 = 黑棋勝
+            if (!hasBlackKing) return 'R'; // 沒黑將 = 紅棋勝
+            return null;
+        }
+
+        function showGameOver(winner) {
+            gameActive = false;
+            playVictorySound();
+            const title = document.getElementById('game-over-title');
+            title.innerText = winner === 'R' ? "紅方大獲全勝！" : "黑方大獲全勝！";
+            title.style.color = winner === 'R' ? "#cc0000" : "#000";
+            document.getElementById('game-over-modal').style.display = 'flex';
+        }
+
+        function restartGame() {
+            if (mySide !== 'BOTH') {
+                sendResetSignal();
+            } else {
+                board = JSON.parse(JSON.stringify(initialBoard));
+                turn = 'R';
+                gameActive = true;
+                selectedIndex = null;
+                validMoves = [];
+                document.getElementById('game-over-modal').style.display = 'none';
+                renderBoard();
+            }
+        }
+
+        // 規則驗證 (不變)
+        function isValidMove(fromR, fromC, toR, toC) {
+            const piece = board[fromR][fromC];
+            if (!piece) return false;
+            const color = piece[0];
+            const type = piece[1];
+            const target = board[toR][toC];
+            if (target && target[0] === color) return false; 
+
+            const dr = toR - fromR;
+            const dc = toC - fromC;
+            const absDr = Math.abs(dr);
+            const absDc = Math.abs(dc);
+
+            function countPiecesBetween(fR, fC, tR, tC) {
+                let count = 0;
+                if (fR === tR) {
+                    const minC = Math.min(fC, tC), maxC = Math.max(fC, tC);
+                    for (let c = minC + 1; c < maxC; c++) if (board[fR][c]) count++;
+                } else if (fC === tC) {
+                    const minR = Math.min(fR, tR), maxR = Math.max(fR, tR);
+                    for (let r = minR + 1; r < maxR; r++) if (board[r][fC]) count++;
+                }
+                return count;
+            }
+
+            switch (type) {
+                case '將': case '帥':
+                    if (toC < 3 || toC > 5) return false;
+                    if (color === 'R' && (toR < 7 || toR > 9)) return false;
+                    if (color === 'B' && (toR < 0 || toR > 2)) return false;
+                    return (absDr + absDc === 1);
+                case '士': case '仕':
+                    if (toC < 3 || toC > 5) return false;
+                    if (color === 'R' && (toR < 7 || toR > 9)) return false;
+                    if (color === 'B' && (toR < 0 || toR > 2)) return false;
+                    return (absDr === 1 && absDc === 1);
+                case '象': case '相':
+                    if (color === 'R' && toR < 5) return false;
+                    if (color === 'B' && toR > 4) return false;
+                    if (absDr === 2 && absDc === 2) return !board[fromR + dr / 2][fromC + dc / 2];
+                    return false;
+                case '馬':
+                    if (absDr === 2 && absDc === 1) return !board[fromR + dr / 2][fromC];
+                    if (absDr === 1 && absDc === 2) return !board[fromR][fromC + dc / 2];
+                    return false;
+                case '車':
+                    if (fromR !== toR && fromC !== toC) return false;
+                    return countPiecesBetween(fromR, fromC, toR, toC) === 0;
+                case '砲': case '炮':
+                    if (fromR !== toR && fromC !== toC) return false;
+                    const cnt = countPiecesBetween(fromR, fromC, toR, toC);
+                    if (!target) return cnt === 0;
+                    return cnt === 1;
+                case '兵': case '卒':
+                    if (color === 'R') {
+                        if (dr > 0) return false;
+                        if (fromR >= 5) return (dr === -1 && dc === 0);
+                        return (absDr + absDc === 1 && dr <= 0);
+                    } else {
+                        if (dr < 0) return false;
+                        if (fromR <= 4) return (dr === 1 && dc === 0);
+                        return (absDr + absDc === 1 && dr >= 0);
+                    }
+            }
+            return false;
+        }
+
+        function getValidMoves(r, c) {
+            let moves = [];
+            for (let toR = 0; toR < 10; toR++) {
+                for (let toC = 0; toC < 9; toC++) {
+                    if (isValidMove(r, c, toR, toC)) moves.push({ row: toR, col: toC });
+                }
+            }
+            return moves;
+        }
+
+        // 動態格線生成
+        function renderBoardLines() {
+            linesGrid.innerHTML = '';
+            let html = '';
+            const isBlackView = (mySide === 'B');
+            for(let i=0; i<32; i++) html += '<div class="cell"></div>';
+            
+            // 【修復 1】利用「文字倒序 + 元素旋轉」雙重修正法，確保黑棋看到的楚河漢界 100% 絕不顛倒
+            if (isBlackView) {
+                html += `<div class="river"><span class="rotate-180">界漢</span>&nbsp;&nbsp;<span class="rotate-180">河楚</span></div>`;
+            } else {
+                html += `<div class="river">楚河&nbsp;&nbsp;漢界</div>`;
+            }
+            
+            for(let i=0; i<32; i++) html += '<div class="cell"></div>';
+            linesGrid.innerHTML = html;
+        }
+
+        // 動態渲染棋子與點擊事件
+        function renderBoard() {
+            renderBoardLines();
+            piecesLayer.innerHTML = '';
+            const isBlackView = (mySide === 'B');
+
+            for (let i = 0; i < 10; i++) {
+                for (let j = 0; j < 9; j++) {
+                    const r = isBlackView ? (9 - i) : i;
+                    const c = isBlackView ? (8 - j) : j;
+
+                    const intersection = document.createElement('div');
+                    intersection.className = 'intersection';
+                    
+                    const pieceText = board[r][c];
+                    if (pieceText) {
+                        const pieceDiv = document.createElement('div');
+                        const isRed = pieceText.startsWith('R');
+                        pieceDiv.className = `piece ${isRed ? 'red' : 'black'}`;
+                        pieceDiv.innerText = pieceText.substring(1);
+                        intersection.appendChild(pieceDiv);
+                    }
+
+                    if (selectedIndex && selectedIndex.row === r && selectedIndex.col === c) {
+                        intersection.classList.add('selected');
+                    }
+
+                    const isPossibleMove = validMoves.some(m => m.row === r && m.col === c);
+                    if (isPossibleMove) intersection.classList.add('highlight');
+
+                    intersection.addEventListener('click', () => handleCellClick(r, c));
+                    piecesLayer.appendChild(intersection);
+                }
+            }
+            
+            let turnTxt = turn === 'R' ? "紅方" : "黑方";
+            if (mySide !== 'BOTH') {
+                const roleTxt = mySide === 'R' ? "你執紅棋(下)" : "你執黑棋(下)";
+                statusDiv.innerText = `${roleTxt} | 輪到：${turnTxt} ${turn === mySide ? '（到你行！）' : '（等緊對方...）'}`;
+            } else {
+                statusDiv.innerText = `【單機】輪到：${turnTxt}`;
+            }
+        }
+
+        function handleCellClick(row, col) {
+            if (!gameActive) return;
+            if (mySide !== 'BOTH' && turn !== mySide) return; 
+            const piece = board[row][col];
+
+            if (selectedIndex) {
+                const isLegal = validMoves.some(m => m.row === row && m.col === col);
+                if (isLegal) {
+                    board[row][col] = board[selectedIndex.row][selectedIndex.col];
+                    board[selectedIndex.row][selectedIndex.col] = null;
+                    
+                    playBeepSound(); // 本地行棋成功響「嘟」聲
+
+                    // 即時檢查勝負
+                    const winner = checkGameOver();
+                    if (winner) {
+                        gameActive = false;
+                    } else {
+                        turn = turn === 'R' ? 'B' : 'R';
+                    }
+
+                    selectedIndex = null;
+                    validMoves = [];
+                    renderBoard();
+                    
+                    if (mySide !== 'BOTH') {
+                        sendMoveData(winner); // 將正確的 winner 傳給對方
+                    }
+                    
+                    if (!gameActive) {
+                        showGameOver(winner);
+                    }
+                } else if (piece && piece.startsWith(turn)) {
+                    selectedIndex = { row, col };
+                    validMoves = getValidMoves(row, col);
+                    renderBoard();
+                } else {
+                    selectedIndex = null;
+                    validMoves = [];
+                    renderBoard();
+                }
+            } else {
+                if (piece && piece.startsWith(turn)) {
+                    selectedIndex = { row, col };
+                    validMoves = getValidMoves(row, col);
+                    renderBoard();
+                }
+            }
+        }
+
+        renderBoard();
+    </script>
+</body>
+</html>

@@ -226,45 +226,24 @@
 
             statusDiv.innerText = "正在連線到雲端伺服器...";
             const clientId = "client_" + Math.random().toString(36).substring(7);
-            client = new Paho.MQTT.Client("broker.hivemq.com", Number(8000), clientId);
+            client = new Paho.MQTT.Client("broker.hivemq.com", Number(8884), clientId);
 
-            client.onConnectionLost = () => { statusDiv.innerText = "連線中斷，請重試！"; };
-            client.onMessageArrived = (message) => {
-                const data = JSON.parse(message.payloadString);
-                if (data.sender === clientId) return;
-                
-                if (data.type === 'MOVE') {
-                    board = data.board;
-                    turn = data.turn;
-                    gameActive = data.gameActive;
-                    selectedIndex = null;
-                    validMoves = [];
-                    renderBoard();
-                    
-                    playBeepSound(); // 對方行棋後，自己本地響「嘟」聲
-                    
-                    if (!gameActive) showGameOver(data.winner);
-                } else if (data.type === 'RESET') {
-                    board = JSON.parse(JSON.stringify(initialBoard));
-                    turn = 'R';
-                    gameActive = true;
-                    selectedIndex = null;
-                    validMoves = [];
-                    document.getElementById('game-over-modal').style.display = 'none';
-                    renderBoard();
-                }
-            };
+client.onConnectionLost = () => { statusDiv.innerText = "連線中斷，請重試！"; };
+client.onMessageArrived = (message) => {
+    // ...保持你原本內部的代碼不變...
+};
 
-            client.connect({
-                onSuccess: () => {
-                    client.subscribe("xiangqi/room/" + roomNumber);
-                    document.getElementById('connection-panel').style.background = "#e6ffe6";
-                    statusDiv.innerText = `已入房間【${roomNumber}】| 你執【${mySide === 'R' ? '紅棋' : '黑棋'}】`;
-                    renderBoard();
-                    sendMoveData(null);
-                },
-                useSSL: false
-            });
+// 連線設定改為 true
+client.connect({
+    onSuccess: () => {
+        client.subscribe("xiangqi/room/" + roomNumber);
+        document.getElementById('connection-panel').style.background = "#e6ffe6";
+        statusDiv.innerText = `已入房間【${roomNumber}】| 你執【${mySide === 'R' ? '紅棋' : '黑棋'}】`;
+        renderBoard();
+        sendMoveData(null);
+    },
+    useSSL: true // 🌟 關鍵：強制開啟安全加密，GitHub 才會放行！
+});
         }
 
         function sendMoveData(finalWinner) {

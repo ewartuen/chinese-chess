@@ -36,25 +36,23 @@
             width: 100%;
             max-width: 400px;
         }
-        #status { font-size: 0.9rem; margin-bottom: 6px; font-weight: bold; color: #cc0000; }
+        #status { font-size: 0.9rem; font-weight: bold; color: #cc0000; line-height: 1.3; }
+        #input-area { margin-top: 6px; }
         input, button { padding: 6px 10px; font-size: 0.85rem; border-radius: 4px; border: 1px solid #ccc; margin: 2px; }
         button { background: #cc0000; color: white; cursor: pointer; border: none; font-weight: bold; }
         
-        /* 棋盤大容器 */
+        /* 棋盤主容器 */
         .chessboard-container { 
             position: relative; 
             background-color: #fabd66; 
             border: 4px double #8a5216; 
             box-shadow: 0 4px 10px rgba(0,0,0,0.2); 
             border-radius: 4px;
-            width: 96vw; 
-            max-width: 410px;
-            height: calc(96vw * 1.11); 
-            max-height: 455px;
-            padding: calc((96vw / 9) / 2) calc((96vw / 8) / 2);
-        }
-        @media (min-width: 410px) {
-            .chessboard-container { padding: 22.7px 25.6px; }
+            width: 84vmin; 
+            height: calc(84vmin * 1.11); 
+            max-width: 500px;
+            max-height: calc(500px * 1.11);
+            padding: calc(100% / 10 / 2) calc(100% / 9 / 2);
         }
 
         /* 格線網格 */
@@ -62,15 +60,16 @@
             display: grid; 
             grid-template-columns: repeat(8, 1fr); 
             grid-template-rows: repeat(9, 1fr); 
-            width: 100%;
-            height: 100%;
+            width: calc(100% - (100% / 9));
+            height: calc(100% - (100% / 10));
             position: absolute;
-            top: 0; left: 0;
-            padding: calc((100% / 10) / 2) calc((100% / 9) / 2);
+            top: calc(100% / 10 / 2); 
+            left: calc(100% / 9 / 2);
             pointer-events: none;
         }
         .cell { border: 1px solid #8a5216; }
         
+        /* 楚河漢界 */
         .river { 
             grid-column: span 8; 
             border: 1px solid #8a5216; 
@@ -82,6 +81,8 @@
             font-weight: bold; 
             color: #8a5216; 
             letter-spacing: 8px; 
+            background-color: #fabd66;
+            z-index: 1;
         }
         
         /* 棋子與點擊事件圖層 */
@@ -101,13 +102,15 @@
             cursor: pointer; position: relative; 
         }
         
+        /* 棋子主體 */
         .piece { 
-            width: 88%; height: 88%; 
+            width: 85%; 
+            aspect-ratio: 1 / 1;
             border-radius: 50%; 
             background-color: #f7e6c4; 
             border: 1.5px solid #555; 
             display: flex; justify-content: center; align-items: center; 
-            font-size: 1.35rem; font-weight: bold; 
+            font-size: 1.25rem; font-weight: bold; 
             box-shadow: 1px 1px 4px rgba(0,0,0,0.3); 
             z-index: 20; 
             pointer-events: none;
@@ -116,13 +119,33 @@
         .piece.black { color: #000000; border-color: #000000; }
         
         .intersection.selected .piece { transform: scale(1.1); box-shadow: 0 0 8px #ff9900; border-color: #ff9900; }
+        
+        /* 最後落子步跡高亮效果 */
+        .intersection.last-move::after {
+            content: '';
+            position: absolute;
+            width: 88%;
+            height: 88%;
+            border: 3px dashed #ff9900;
+            border-radius: 50%;
+            z-index: 11;
+            box-shadow: inset 0 0 8px rgba(255, 153, 0, 0.6);
+            animation: pulse-border 2s infinite;
+        }
+        @keyframes pulse-border {
+            0% { opacity: 0.6; }
+            50% { opacity: 1; }
+            100% { opacity: 0.6; }
+        }
+        
+        /* 可走位置提示點 */
         .intersection.highlight::after { 
-            content: ''; width: 12px; height: 12px; 
+            content: ''; 
+            width: 25%; 
+            aspect-ratio: 1 / 1;
             background-color: rgba(0, 180, 0, 0.75); border-radius: 50%; 
             position: absolute; z-index: 15; 
         }
-
-        .rotate-180 { display: inline-block; transform: rotate(180deg); }
 
         /* 彈出勝負視窗 */
         #game-over-modal {
@@ -138,11 +161,11 @@
 </head>
 <body>
 
-    <h1>中國象棋連線對弈版 (WebRTC P2P)</h1>
+    <h1>中國象棋連線對弈版</h1>
     
     <div id="connection-panel">
         <div id="status">【單機試玩】輸入自訂房號即可連線</div>
-        <div>
+        <div id="input-area">
             <input type="number" id="room-input" placeholder="輸入自訂房號 (如 7788)" style="width: 160px; text-align: center;">
             <button onclick="joinRoom('R')">執紅入房</button>
             <button onclick="joinRoom('B')" style="background:#333;">執黑入房</button>
@@ -164,8 +187,8 @@
     <script>
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         
-        // 雙方落子「嘟」一聲
         function playBeepSound() {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
             osc.type = 'sine';
@@ -176,7 +199,6 @@
             osc.start(); osc.stop(audioCtx.currentTime + 0.08);
         }
 
-        // 大獲全勝和弦音效
         function playVictorySound() {
             const notes = [523.25, 659.25, 783.99, 1046.50]; 
             notes.forEach((freq, index) => {
@@ -211,22 +233,23 @@
         let validMoves = []; 
         let gameActive = true;
 
+        let lastMove = null; 
+
         let client = null;
         let roomNumber = "";
         let mySide = 'BOTH'; 
+        let isP2PConnected = false; 
 
-        // === WebRTC 宣告變數 ===
         let peerConnection = null;
         let dataChannel = null;
         const rtcConfig = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' } // 使用 Google 免費 STUN 伺服器
-            ]
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
         };
 
         const piecesLayer = document.getElementById('pieces-layer');
         const linesGrid = document.getElementById('lines-grid');
         const statusDiv = document.getElementById('status');
+        const inputArea = document.getElementById('input-area');
 
         function joinRoom(side) {
             if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -236,21 +259,34 @@
             roomNumber = room;
             mySide = side;
 
-            statusDiv.innerText = "正在連線到信令伺服器...";
-            const clientId = "xiangqi_" + Math.random().toString(36).substring(7);
+            statusDiv.innerText = "正在連線到安全雲端節點...";
+            const clientId = "xq_" + Math.random().toString(36).substring(7);
             
             client = new Paho.MQTT.Client("broker.hivemq.com", Number(8884), clientId);
 
-            client.onConnectionLost = () => { 
-                console.log("Signaling channel disconnected. WebRTC connection remains active.");
+            client.onConnectionLost = (responseObject) => { 
+                console.log("MQTT Connection Lost.");
+                if (mySide !== 'BOTH' && !isP2PConnected) {
+                    statusDiv.innerText = "⚠️ 網絡出現微弱波動，正在自動秒級重連...";
+                    setTimeout(() => {
+                        if(client && !client.isConnected()) tryReconnect();
+                    }, 1000);
+                }
             };
 
-            // 接收網絡端信令同步
             client.onMessageArrived = async (message) => {
                 const data = JSON.parse(message.payloadString);
-                if (data.sender === clientId) return; 
+                if (data.sender === client.clientId) return; 
                 
-                // === WebRTC 信令握手處理 ===
+                if (data.type === 'GAME_MOVE' && !isP2PConnected) {
+                    handleIncomingGameData(data);
+                    return;
+                }
+                if (data.type === 'GAME_RESET' && !isP2PConnected) {
+                    handleIncomingGameData({ type: 'RESET' });
+                    return;
+                }
+
                 if (data.type === 'RTC_OFFER' && mySide === 'B') {
                     await initWebRTC(false);
                     await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
@@ -259,75 +295,94 @@
                     sendSignal({ type: 'RTC_ANSWER', answer: answer });
                 } 
                 else if (data.type === 'RTC_ANSWER' && mySide === 'R') {
-                    await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+                    if(peerConnection) await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
                 } 
                 else if (data.type === 'RTC_ICE') {
-                    if (peerConnection) {
-                        try {
-                            await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-                        } catch(e) {
-                            console.error("Error adding ice candidate", e);
-                        }
+                    if (peerConnection && peerConnection.remoteDescription) {
+                        try { await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)); } catch(e){}
                     }
+                }
+                else if (data.type === 'BLACK_JOINED' && mySide === 'R') {
+                    initWebRTC(true);
                 }
             };
 
-            // 建立 WSS 安全加密連線
+            doConnect();
+        }
+
+        function doConnect() {
             client.connect({
                 onSuccess: () => {
                     client.subscribe("xiangqi/room/" + roomNumber);
                     if (mySide === 'R') {
-                        statusDiv.innerText = `已入房間【${roomNumber}】| 等待黑方加入並建立 P2P 直連...`;
-                        initWebRTC(true); // 紅方（R）主動發起 Offer
+                        statusDiv.innerText = `已入房間【${roomNumber}】| 等待黑方加入...`;
                     } else {
-                        statusDiv.innerText = `已入房間【${roomNumber}】| 正在與紅方嘗試 P2P 連線...`;
+                        statusDiv.innerText = `已入房間【${roomNumber}】| 正在嘗試建立連線...`;
                         sendSignal({ type: 'BLACK_JOINED' });
                     }
+                    
+                    setTimeout(() => {
+                        if (!isP2PConnected && mySide !== 'BOTH') {
+                            statusDiv.innerText = `【房號 ${roomNumber}】🌐 已啟動雲端高可用防斷線備用模式`;
+                            document.getElementById('connection-panel').style.background = "#fff9e6";
+                            inputArea.style.display = 'none'; // 成功連線，隱藏輸入框與按鈕
+                            renderBoard();
+                        }
+                    }, 4000);
+
                     renderBoard();
                 },
-                onFailure: () => {
-                    statusDiv.innerText = "連線失敗，請重新整理網頁再試！";
+                onFailure: () => { 
+                    statusDiv.innerText = "連線失敗，5秒後重試..."; 
+                    setTimeout(doConnect, 5000);
                 },
-                useSSL: true 
+                useSSL: true,
+                keepAliveInterval: 30,
+                timeout: 10
             });
         }
 
-        // === 新增：WebRTC 連線核心常式 ===
+        function tryReconnect() {
+            if(client) {
+                client.connect({
+                    onSuccess: () => {
+                        client.subscribe("xiangqi/room/" + roomNumber);
+                        if (isP2PConnected) return;
+                        statusDiv.innerText = `【房號 ${roomNumber}】🌐 雲端防斷線備用模式已成功自動回復！`;
+                        inputArea.style.display = 'none'; 
+                        renderBoard();
+                    },
+                    onFailure: () => { setTimeout(tryReconnect, 3000); },
+                    useSSL: true,
+                    keepAliveInterval: 30
+                });
+            }
+        }
+
         async function initWebRTC(isInitiator) {
+            if(peerConnection) return;
             peerConnection = new RTCPeerConnection(rtcConfig);
 
-            // 收集並發送 ICE Candidate
             peerConnection.onicecandidate = (event) => {
-                if (event.candidate) {
-                    sendSignal({ type: 'RTC_ICE', candidate: event.candidate });
-                }
+                if (event.candidate) sendSignal({ type: 'RTC_ICE', candidate: event.candidate });
             };
 
-            // 監聽 P2P 連線狀態
             peerConnection.onconnectionstatechange = () => {
-                switch(peerConnection.connectionState) {
-                    case 'connected':
-                        statusDiv.innerText = `🎉 P2P 直連成功！端到端加密通訊中。你執：${mySide === 'R' ? '紅棋' : '黑棋'}`;
-                        document.getElementById('connection-panel').style.background = "#e6ffe6";
-                        break;
-                    case 'disconnected':
-                    case 'failed':
-                        statusDiv.innerText = "❌ P2P 連線中斷或失敗。";
-                        document.getElementById('connection-panel').style.background = "#ffe6e6";
-                        break;
+                if (peerConnection.connectionState === 'connected') {
+                    isP2PConnected = true;
+                    document.getElementById('connection-panel').style.background = "#e6ffe6";
+                    inputArea.style.display = 'none'; // 成功直連，隱藏輸入按鈕
+                    renderBoard();
                 }
             };
 
             if (isInitiator) {
-                // 紅方建立數據通道
                 dataChannel = peerConnection.createDataChannel("xiangqiGameChannel");
                 setupDataChannel();
-
                 const offer = await peerConnection.createOffer();
                 await peerConnection.setLocalDescription(offer);
                 sendSignal({ type: 'RTC_OFFER', offer: offer });
             } else {
-                // 黑方監聽數據通道
                 peerConnection.ondatachannel = (event) => {
                     dataChannel = event.channel;
                     setupDataChannel();
@@ -336,9 +391,14 @@
         }
 
         function setupDataChannel() {
+            dataChannel.onopen = () => {
+                isP2PConnected = true;
+                document.getElementById('connection-panel').style.background = "#e6ffe6";
+                inputArea.style.display = 'none'; // 成功直連，隱藏輸入按鈕
+                renderBoard();
+            };
             dataChannel.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                handleIncomingGameData(data);
+                handleIncomingGameData(JSON.parse(event.data));
             };
         }
 
@@ -351,55 +411,46 @@
             }
         }
 
-        // === 新增：統一處理接收棋局資料 ===
         function handleIncomingGameData(data) {
-            if (data.type === 'MOVE') {
-                board = data.board;
-                turn = data.turn;
-                gameActive = data.gameActive;
-                selectedIndex = null;
-                validMoves = [];
-                renderBoard();
-                
-                playBeepSound(); 
-                
-                if (!gameActive) showGameOver(data.winner);
-            } else if (data.type === 'RESET') {
-                board = JSON.parse(JSON.stringify(initialBoard));
-                turn = 'R';
-                gameActive = true;
-                selectedIndex = null;
-                validMoves = [];
-                document.getElementById('game-over-modal').style.display = 'none';
-                renderBoard();
-            }
+            board = data.board;
+            turn = data.turn;
+            gameActive = data.gameActive;
+            selectedIndex = null;
+            validMoves = [];
+            lastMove = data.lastMove || null;
+
+            renderBoard();
+            playBeepSound(); 
+            if (!gameActive && data.winner) showGameOver(data.winner);
         }
 
-        // === 改寫：改經 WebRTC DataChannel 發送數據 ===
         function sendMoveData(finalWinner) {
-            if (dataChannel && dataChannel.readyState === "open") {
-                const payload = JSON.stringify({
-                    type: 'MOVE',
-                    board: board,
-                    turn: turn,
-                    gameActive: gameActive,
-                    winner: finalWinner
-                });
-                dataChannel.send(payload);
+            const payload = {
+                type: 'GAME_MOVE',
+                board: board,
+                turn: turn,
+                gameActive: gameActive,
+                winner: finalWinner,
+                lastMove: lastMove
+            };
+
+            if (isP2PConnected && dataChannel && dataChannel.readyState === "open") {
+                dataChannel.send(JSON.stringify(payload));
+            } else {
+                sendSignal(payload); 
             }
         }
 
-        // === 改寫：改經 WebRTC DataChannel 發送重置訊號 ===
         function sendResetSignal() {
-            if (dataChannel && dataChannel.readyState === "open") {
+            if (isP2PConnected && dataChannel && dataChannel.readyState === "open") {
                 dataChannel.send(JSON.stringify({ type: 'RESET' }));
+            } else {
+                sendSignal({ type: 'GAME_RESET' });
             }
         }
 
-        // 判定勝負
         function checkGameOver() {
-            let hasRedKing = false;
-            let hasBlackKing = false;
+            let hasRedKing = false, hasBlackKing = false;
             for (let r = 0; r < 10; r++) {
                 for (let c = 0; c < 9; c++) {
                     if (board[r][c] === 'R帥') hasRedKing = true;
@@ -423,32 +474,20 @@
         function restartGame() {
             if (mySide !== 'BOTH') {
                 sendResetSignal();
-                // 本地同步重置
-                handleIncomingGameData({ type: 'RESET' });
-            } else {
-                board = JSON.parse(JSON.stringify(initialBoard));
-                turn = 'R';
-                gameActive = true;
-                selectedIndex = null;
-                validMoves = [];
-                document.getElementById('game-over-modal').style.display = 'none';
-                renderBoard();
             }
+            board = JSON.parse(JSON.stringify(initialBoard));
+            turn = 'R'; gameActive = true; selectedIndex = null; validMoves = []; lastMove = null;
+            document.getElementById('game-over-modal').style.display = 'none';
+            renderBoard();
         }
 
-        // 棋子規則驗證
         function isValidMove(fromR, fromC, toR, toC) {
             const piece = board[fromR][fromC];
             if (!piece) return false;
-            const color = piece[0];
-            const type = piece[1];
-            const target = board[toR][toC];
+            const color = piece[0], type = piece[1], target = board[toR][toC];
             if (target && target[0] === color) return false; 
 
-            const dr = toR - fromR;
-            const dc = toC - fromC;
-            const absDr = Math.abs(dr);
-            const absDc = Math.abs(dc);
+            const dr = toR - fromR, dc = toC - fromC, absDr = Math.abs(dr), absDc = Math.abs(dc);
 
             function countPiecesBetween(fR, fC, tR, tC) {
                 let count = 0;
@@ -514,25 +553,17 @@
             return moves;
         }
 
-        // 動態格線與楚河漢界生成
         function renderBoardLines() {
             linesGrid.innerHTML = '';
             let html = '';
-            const isBlackView = (mySide === 'B');
             for(let i=0; i<32; i++) html += '<div class="cell"></div>';
             
-            // 雙重翻轉修正，確保黑棋看到的楚河漢界 100% 正立
-            if (isBlackView) {
-                html += `<div class="river"><span class="rotate-180">界漢</span>&nbsp;&nbsp;<span class="rotate-180">河楚</span></div>`;
-            } else {
-                html += `<div class="river">楚河&nbsp;&nbsp;漢界</div>`;
-            }
+            html += `<div class="river">楚河&nbsp;&nbsp;漢界</div>`;
             
             for(let i=0; i<32; i++) html += '<div class="cell"></div>';
             linesGrid.innerHTML = html;
         }
 
-        // 渲染棋子與處理視角
         function renderBoard() {
             renderBoardLines();
             piecesLayer.innerHTML = '';
@@ -559,6 +590,10 @@
                         intersection.classList.add('selected');
                     }
 
+                    if (lastMove && ((lastMove.from.row === r && lastMove.from.col === c) || (lastMove.to.row === r && lastMove.to.col === c))) {
+                        intersection.classList.add('last-move');
+                    }
+
                     const isPossibleMove = validMoves.some(m => m.row === r && m.col === c);
                     if (isPossibleMove) intersection.classList.add('highlight');
 
@@ -568,12 +603,13 @@
             }
             
             let turnTxt = turn === 'R' ? "紅方" : "黑方";
+
             if (mySide !== 'BOTH') {
-                const roleTxt = mySide === 'R' ? "你執紅棋(下)" : "你執黑棋(下)";
-                let p2pStatus = (dataChannel && dataChannel.readyState === "open") ? "🟢 P2P 直連中" : "安排連線中...";
-                statusDiv.innerText = `【房號 ${roomNumber}】${p2pStatus} | 輪到：${turnTxt} ${turn === mySide ? '（到你行！）' : '（等緊對方...）'}`;
+                let p2pStatus = isP2PConnected ? "🟢 P2P 直連中" : "🌐 雲端連線中";
+                statusDiv.innerHTML = `【房號 ${roomNumber}】${p2pStatus} | 輪到：${turnTxt} ${turn === mySide ? '（到你行！）' : '（等緊對方...）'}`;
+                inputArea.style.display = 'none'; // 安全計，每次重新 render 時確認連線就隱藏輸入框
             } else {
-                statusDiv.innerText = `【單機】輪到：${turnTxt}`;
+                statusDiv.innerHTML = `【單機】輪到：${turnTxt}`;
             }
         }
 
@@ -585,44 +621,34 @@
             if (selectedIndex) {
                 const isLegal = validMoves.some(m => m.row === row && m.col === col);
                 if (isLegal) {
-                    board[row][col] = board[selectedIndex.row][selectedIndex.col];
+                    const movingPiece = board[selectedIndex.row][selectedIndex.col];
+
+                    lastMove = {
+                        from: { row: selectedIndex.row, col: selectedIndex.col },
+                        to: { row: row, col: col }
+                    };
+
+                    board[row][col] = movingPiece;
                     board[selectedIndex.row][selectedIndex.col] = null;
                     
                     playBeepSound(); 
 
-                    // 檢查勝負
                     const winner = checkGameOver();
-                    if (winner) {
-                        gameActive = false;
-                    } else {
-                        turn = turn === 'R' ? 'B' : 'R';
-                    }
+                    if (winner) gameActive = false; else turn = turn === 'R' ? 'B' : 'R';
 
-                    selectedIndex = null;
-                    validMoves = [];
+                    selectedIndex = null; validMoves = [];
                     renderBoard();
                     
-                    if (mySide !== 'BOTH') {
-                        sendMoveData(winner); 
-                    }
-                    
-                    if (!gameActive) {
-                        showGameOver(winner);
-                    }
+                    if (mySide !== 'BOTH') sendMoveData(winner); 
+                    if (!gameActive) showGameOver(winner);
                 } else if (piece && piece.startsWith(turn)) {
-                    selectedIndex = { row, col };
-                    validMoves = getValidMoves(row, col);
-                    renderBoard();
+                    selectedIndex = { row, col }; validMoves = getValidMoves(row, col); renderBoard();
                 } else {
-                    selectedIndex = null;
-                    validMoves = [];
-                    renderBoard();
+                    selectedIndex = null; validMoves = []; renderBoard();
                 }
             } else {
                 if (piece && piece.startsWith(turn)) {
-                    selectedIndex = { row, col };
-                    validMoves = getValidMoves(row, col);
-                    renderBoard();
+                    selectedIndex = { row, col }; validMoves = getValidMoves(row, col); renderBoard();
                 }
             }
         }

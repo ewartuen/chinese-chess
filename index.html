@@ -4,45 +4,83 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     
-    <title>中國象棋線上對弈 | Chinese Chess Web App</title>
+    <title id="page-title">中國象棋線上對弈 | Chinese Chess Web App</title>
     <meta name="description" content="網頁版獨立中國象棋棋盤應用。支援瀏覽器隨開隨玩、線上連線對戰。無論是棋藝切磋還是日常休閒消遣，都能享受流暢寫實的對弈體驗。">
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
+        
         body { 
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Microsoft JhengHei", sans-serif; 
-            display: flex; 
-            flex-direction: column; 
-            align-items: center; 
             background-color: #f0f0f0; 
             width: 100vw;
-            height: 100vh;
-            padding: 8px;
-            overflow: hidden;
+            min-height: 100vh;
+            overflow-x: hidden;
+            overflow-y: auto;
             -webkit-user-select: none;
             user-select: none;
         }
 
-        h1 { font-size: 1.2rem; color: #333; margin-bottom: 5px; }
+        /* 遊戲核心主容器 */
+        .game-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px 8px;
+            width: 100%;
+        }
+
+        /* 語系切換按鈕：置於 H1 上邊，寬度與棋盤同步並靠右對齊 */
+        .lang-switcher {
+            display: flex;
+            justify-content: flex-end;
+            width: 84vmin; 
+            max-width: 500px;
+            margin-bottom: 12px;
+        }
+        .lang-btn {
+            background: none;
+            border: none;
+            color: #0071e3;
+            cursor: pointer;
+            font-size: 13px;
+            margin-left: 12px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+        .lang-btn:hover {
+            background-color: rgba(0, 113, 227, 0.1);
+        }
+        .lang-btn.active {
+            background-color: #0071e3;
+            color: white;
+            font-weight: bold;
+        }
+
+        h1 { font-size: 1.2rem; color: #333; margin-bottom: 8px; }
         
         #connection-panel { 
             background: #fff; 
             padding: 8px 12px; 
             border-radius: 8px; 
-            margin-bottom: 8px; 
+            margin-bottom: 12px; 
             box-shadow: 0 2px 5px rgba(0,0,0,0.1); 
             text-align: center; 
             width: 100%;
             max-width: 400px;
+            transition: background-color 0.3s ease;
         }
         #status { font-size: 0.9rem; font-weight: bold; color: #cc0000; line-height: 1.3; }
         #input-area { margin-top: 6px; }
         input, button { padding: 6px 10px; font-size: 0.85rem; border-radius: 4px; border: 1px solid #ccc; margin: 2px; }
         button { background: #cc0000; color: white; cursor: pointer; border: none; font-weight: bold; }
-        
-        /* 棋盤主容器 */
+
+        /* 棋盤佈局 */
         .chessboard-container { 
+            flex-shrink: 0; 
             position: relative; 
             background-color: #fabd66; 
             border: 4px double #8a5216; 
@@ -53,9 +91,9 @@
             max-width: 500px;
             max-height: calc(500px * 1.11);
             padding: calc(100% / 10 / 2) calc(100% / 9 / 2);
+            margin-bottom: 15px;
         }
 
-        /* 格線網格 */
         .board-lines { 
             display: grid; 
             grid-template-columns: repeat(8, 1fr); 
@@ -69,7 +107,6 @@
         }
         .cell { border: 1px solid #8a5216; }
         
-        /* 楚河漢界 */
         .river { 
             grid-column: span 8; 
             border: 1px solid #8a5216; 
@@ -85,7 +122,6 @@
             z-index: 1;
         }
         
-        /* 棋子與點擊事件圖層 */
         .pieces-layer { 
             position: absolute; 
             top: 0; left: 0;
@@ -102,7 +138,6 @@
             cursor: pointer; position: relative; 
         }
         
-        /* 棋子主體 */
         .piece { 
             width: 85%; 
             aspect-ratio: 1 / 1;
@@ -120,34 +155,18 @@
         
         .intersection.selected .piece { transform: scale(1.1); box-shadow: 0 0 8px #ff9900; border-color: #ff9900; }
         
-        /* 最後落子步跡高亮效果 */
         .intersection.last-move::after {
-            content: '';
-            position: absolute;
-            width: 88%;
-            height: 88%;
-            border: 3px dashed #ff9900;
-            border-radius: 50%;
-            z-index: 11;
-            box-shadow: inset 0 0 8px rgba(255, 153, 0, 0.6);
-            animation: pulse-border 2s infinite;
+            content: ''; position: absolute; width: 88%; height: 88%;
+            border: 3px dashed #ff9900; border-radius: 50%; z-index: 11;
+            box-shadow: inset 0 0 8px rgba(255, 153, 0, 0.6); animation: pulse-border 2s infinite;
         }
-        @keyframes pulse-border {
-            0% { opacity: 0.6; }
-            50% { opacity: 1; }
-            100% { opacity: 0.6; }
-        }
+        @keyframes pulse-border { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
         
-        /* 可走位置提示點 */
         .intersection.highlight::after { 
-            content: ''; 
-            width: 25%; 
-            aspect-ratio: 1 / 1;
-            background-color: rgba(0, 180, 0, 0.75); border-radius: 50%; 
-            position: absolute; z-index: 15; 
+            content: ''; width: 25%; aspect-ratio: 1 / 1;
+            background-color: rgba(0, 180, 0, 0.75); border-radius: 50%; position: absolute; z-index: 15; 
         }
 
-        /* 彈出勝負視窗 */
         #game-over-modal {
             display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
             background: rgba(0,0,0,0.7); z-index: 999; justify-content: center; align-items: center;
@@ -155,62 +174,348 @@
         }
         #game-over-box { background: white; padding: 25px; border-radius: 12px; text-align: center; color: #333; max-width: 300px; width: 80%; }
         #game-over-title { font-size: 1.6rem; font-weight: bold; margin-bottom: 15px; color: #cc0000; }
+
+        /* Accordion 摺疊選單容器與樣式 */
+        .cc-accordion-wrapper {
+            max-width: 500px; 
+            width: 100%;
+            margin: 15px auto 25px auto;
+            padding: 0 4px;
+        }
+        .cc-accordion { 
+            width: 100%;
+            margin-bottom: 12px; 
+            background: #fff; 
+            border-radius: 12px; 
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05); 
+            text-align: left; 
+            overflow: hidden;
+            -webkit-user-select: text;
+            user-select: text;
+        }
+        .cc-accordion summary {
+            padding: 14px 20px;
+            font-size: 0.95rem;
+            color: #1d1d1f;
+            font-weight: 600;
+            cursor: pointer;
+            outline: none;
+            list-style: none;
+            position: relative;
+            border-left: 4px solid #cc0000;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .cc-accordion summary::-webkit-details-marker {
+            display: none;
+        }
+        .cc-accordion summary::after {
+            content: '▼';
+            font-size: 0.75rem;
+            color: #86868b;
+            transition: transform 0.2s ease;
+        }
+        .cc-accordion[open] summary::after {
+            transform: rotate(180deg);
+        }
+        .cc-accordion-content {
+            padding: 4px 20px 18px 20px;
+        }
+        .cc-accordion-content h3 { font-size: 0.9rem; color: #48484a; margin: 14px 0 6px 0; }
+        .cc-accordion-content p, .cc-accordion-content li { font-size: 0.82rem; color: #86868b; line-height: 1.6; }
+        .cc-accordion-content ul { padding-left: 18px; margin-top: 6px; }
+        .cc-accordion-content li { margin-bottom: 6px; }
     </style>
-<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2352376757469824"
-     crossorigin="anonymous"></script>
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2352376757469824" crossorigin="anonymous"></script>
 </head>
 <body>
 
-    <h1>中國象棋連線對弈版</h1>
-    
-    <div id="connection-panel">
-        <div id="status">【單機試玩】輸入自訂房號即可連線</div>
-        <div id="input-area">
-            <input type="number" id="room-input" placeholder="輸入自訂房號 (如 7788)" style="width: 160px; text-align: center;">
-            <button onclick="joinRoom('R')">執紅入房</button>
-            <button onclick="joinRoom('B')" style="background:#333;">執黑入房</button>
+    <div class="game-wrapper">
+        
+        <div class="lang-switcher">
+            <button id="btn-en" class="lang-btn" onclick="switchGlobalLanguage('en')">English</button>
+            <button id="btn-zh-HK" class="lang-btn" onclick="switchGlobalLanguage('zh-HK')">繁體中文</button>
+            <button id="btn-zh-CN" class="lang-btn" onclick="switchGlobalLanguage('zh-CN')">简体中文</button>
         </div>
-    </div>
 
-    <div class="chessboard-container">
-        <div class="board-lines" id="lines-grid"></div>
-        <div class="pieces-layer" id="pieces-layer"></div>
-    </div>
+        <h1 id="main-heading">中國象棋連線對弈版</h1>
+        
+        <div id="connection-panel">
+            <div id="status"></div>
+            <div id="input-area">
+                <input type="number" id="room-input" placeholder="" style="width: 160px; text-align: center;">
+                <button id="btn-join-red" onclick="joinRoom('R')"></button>
+                <button id="btn-join-black" onclick="joinRoom('B')" style="background:#333;"></button>
+            </div>
+        </div>
 
-    <div id="game-over-modal">
-        <div id="game-over-box">
-            <div id="game-over-title">紅方大獲全勝！</div>
-            <button onclick="restartGame()" style="padding: 8px 20px; font-size: 1rem;">重新棋局</button>
+        <div class="chessboard-container">
+            <div class="board-lines" id="lines-grid"></div>
+            <div class="pieces-layer" id="pieces-layer"></div>
+        </div>
+
+        <div id="game-over-modal">
+            <div id="game-over-box">
+                <div id="game-over-title"></div>
+                <button id="btn-game-restart" onclick="restartGame()" style="padding: 8px 20px; font-size: 1rem;"></button>
+            </div>
+        </div>
+
+        <!-- 摺疊選單區塊 -->
+        <div class="cc-accordion-wrapper">
+            <!-- How to Play 玩法指南 -->
+            <details class="cc-accordion" id="acc-how-to-play">
+                <summary id="summary-how-to-play"></summary>
+                <div class="cc-accordion-content" id="content-how-to-play"></div>
+            </details>
+
+            <!-- 工具與操作指南 -->
+            <details class="cc-accordion" id="acc-guide">
+                <summary id="summary-guide"></summary>
+                <div class="cc-accordion-content" id="content-guide"></div>
+            </details>
         </div>
     </div>
 
     <script>
+        // 全域語系資料庫
+        const translations = {
+            'zh-HK': {
+                title: "中國象棋線上對弈 | Chinese Chess Web App",
+                h1: "中國象棋連線對弈版",
+                placeholder: "輸入自訂房號 (如 7788)",
+                btnRed: "執紅入房",
+                btnBlack: "執黑入房",
+                btnRestart: "重新棋局",
+                gameOverRed: "紅方大獲全勝！",
+                gameOverBlack: "黑方大獲全勝！",
+                
+                statusSolo: "【單機試玩】輸入自訂房號即可連線",
+                statusConnecting: "正在連線到安全雲端節點...",
+                statusLost: "⚠️ 網絡出現微弱波動，正在自動秒級重連...",
+                statusFailed: "連線失敗，5秒後重試...",
+                statusWaitBlack: "已入房間【{room}】| 等待黑方加入...",
+                statusWaitConnect: "已入房間【{room}】| 正在嘗試建立連線...",
+                statusBackupMode: "【房號 {room}】🌐 已啟動雲端高可用防斷線備用模式",
+                statusBackupRestored: "【房號 {room}】🌐 雲端防斷線備用模式已成功自動回復！",
+                
+                p2pStatus: "🟢 P2P 直連中",
+                cloudStatus: "🌐 雲端連線中",
+                roomPrefix: "【房號 {room}】",
+                soloPrefix: "【單機】",
+                turnLabel: "輪到：",
+                redSide: "紅方",
+                blackSide: "黑方",
+                yourTurn: "（到你行！）",
+                waitingOpponent: "（等緊對方...）",
+                
+                // 新增：How to play 繁中內容
+                howToPlayTitle: "如何遊玩中國象棋",
+                howToPlayContent: `
+                    <ul>
+                        <li><strong>核心目標：</strong> 以「將死」或「困斃」對方的帥/將為最終勝利條件。</li>
+                        <li><strong>帥／將：</strong> 只能在九宮格內直橫移動一格。雙方帥將不可在無棋子阻隔下在同一條直線上直接相對（飛將）。</li>
+                        <li><strong>仕／士：</strong> 只能在九宮格內的斜線上移動一格，負責貼身防衛。</li>
+                        <li><strong>相／象：</strong> 每次斜走兩格（走「田」字），且不能過河。若田字正中央有棋子阻擋，則無法跳過（塞象眼）。</li>
+                        <li><strong>馬：</strong> 走「日」字（先向前直/橫走一格，再斜行一格）。若前進方向第一格有棋子，則無法跨越（別馬腿）。</li>
+                        <li><strong>車：</strong> 可沿直線或橫線移動任意格數，前方無阻擋時可直接吃子。</li>
+                        <li><strong>砲／炮：</strong> 移動規則與「車」相同，但吃子時必須橫跨且僅橫跨任何一方的一個棋子（炮打隔子）。</li>
+                        <li><strong>兵／卒：</strong> 未過河前每步只能向前行一格；越過河界後，可向前、左、右行一步，任何時候皆不能後退。</li>
+                    </ul>
+                `,
+                
+                docTitle: "工具與操作指南",
+                docP1: "歡迎使用網頁版<strong>中國象棋</strong>即時連線對弈空間。本項目旨在為象棋愛好者提供一個流暢、免下載的楚河漢界線上博弈平台。",
+                docH3_1: "核心功能與操作技巧",
+                docLi1: "<strong>異地聯機對戰：</strong> 在連線面板輸入相同的自訂房間號碼，分別選擇執紅棋（帥方）或執黑棋（將方）入房，即可透過雲端 MQTT 代理伺服器建立點對點同步連線。",
+                docLi2: "<strong>合法走法提示：</strong> 點擊棋子後，系統會自動根據「馬走日、象走田、炮需隔子轟」等傳統中國象棋常規行棋規則，高亮提示所有可移動的合法交叉點。",
+                docP2: "本應用完全基於前端 HTML5 結構與 Paho MQTT 協議建構，無後端數據庫緩存，提供純粹、安全、響應式的棋類推推演工具。"
+            },
+            'en': {
+                title: "Chinese Chess Online | Xiangqi Web App",
+                h1: "Chinese Chess Online Match",
+                placeholder: "Enter Room No. (e.g. 7788)",
+                btnRed: "Play Red",
+                btnBlack: "Play Black",
+                btnRestart: "Restart Match",
+                gameOverRed: "Red Wins Universally!",
+                gameOverBlack: "Black Wins Universally!",
+                
+                statusSolo: "【Solo Mode】Enter a customized room number to connect",
+                statusConnecting: "Connecting to secure cloud nodes...",
+                statusLost: "⚠️ Network fluctuating. Attempting millisecond auto-reconnection...",
+                statusFailed: "Connection failed. Retrying in 5 seconds...",
+                statusWaitBlack: "Joined Room 【{room}】| Waiting for Black side...",
+                statusWaitConnect: "Joined Room 【{room}】| Establishing channel...",
+                statusBackupMode: "【Room {room}】🌐 High-availability cloud backup mode active",
+                statusBackupRestored: "【Room {room}】🌐 Cloud channel successfully restored!",
+                
+                p2pStatus: "🟢 P2P Connected",
+                cloudStatus: "🌐 Cloud Syncing",
+                roomPrefix: "【Room {room}】",
+                soloPrefix: "【Local】",
+                turnLabel: "Turn: ",
+                redSide: "Red",
+                blackSide: "Black",
+                yourTurn: " (Your Turn!)",
+                waitingOpponent: " (Waiting for opponent...)",
+                
+                // 新增：How to play 英文內容
+                howToPlayTitle: "How to Play Chinese Chess (Xiangqi)",
+                howToPlayContent: `
+                    <ul>
+                        <li><strong>Objective:</strong> Capture (Checkmate) or corner (Stalemate) the opponent's General/Marshal to win.</li>
+                        <li><strong>General / Marshal:</strong> Moves 1 square horizontally or vertically within the Palace (3x3 zone). Cannot face each other directly without any pieces in between.</li>
+                        <li><strong>Advisor / Guard:</strong> Moves 1 square diagonally within the Palace, serving as a personal bodyguard.</li>
+                        <li><strong>Elephant:</strong> Moves exactly 2 squares diagonally ("Tian" shape) and cannot cross the central river. Blocked if a piece occupies the central pivot point ("blocking elephant's eye").</li>
+                        <li><strong>Horse:</strong> Moves 1 square straight then 1 square diagonally ("Ri" shape). Blocked if a piece is adjacent in its initial straight path ("hobbling the horse's leg").</li>
+                        <li><strong>Chariot:</strong> Moves any number of squares horizontally or vertically along unobstructed paths.</li>
+                        <li><strong>Cannon:</strong> Moves like a Chariot, but must hop over exactly one intermediate piece (of either side) to capture a target.</li>
+                        <li><strong>Soldier:</strong> Moves 1 square forward before crossing the river. After crossing, it can also move 1 square horizontally. Never moves backward.</li>
+                    </ul>
+                `,
+                
+                docTitle: "Game Manual & Operations",
+                docP1: "Welcome to the standalone <strong>Chinese Chess (Xiangqi) Web Application</strong>. This platform provides chess enthusiasts worldwide with an elegant, installation-free digital board to experience the historic tactical battles across the Chu River and Han Border.",
+                docH3_1: "Key Features & User Guide",
+                docLi1: "<strong>Remote Matchmaking:</strong> Input a matching customized room number into the connection panel, select your preferred side (Red/Marshal or Black/General), and initialize the secure real-time synchronized session via the cloud MQTT broker.",
+                docLi2: "<strong>Algorithmic Move Filtering:</strong> Upon selecting a piece, the program dynamically highlights valid coordinates based on traditional Xiangqi rules (e.g., Horse's diagonal leap, Elephant's field restriction, and Cannon's screen-jumping attack).",
+                docP2: "Built entirely with modern HTML5 and the Paho MQTT protocol, this client-side application requires no backend data caching, ensuring a secure, responsive, and pure tactical gaming experience."
+            },
+            'zh-CN': {
+                title: "中国象棋在线对弈 | Chinese Chess Web App",
+                h1: "中国象棋连线对弈版",
+                placeholder: "输入自订房号 (如 7788)",
+                btnRed: "执红入房",
+                btnBlack: "执黑入房",
+                btnRestart: "重新棋局",
+                gameOverRed: "红方大获全胜！",
+                gameOverBlack: "黑方大获全胜！",
+                
+                statusSolo: "【单机试玩】输入自订房号即可连线",
+                statusConnecting: "正在连线到安全云端节点...",
+                statusLost: "⚠️ 网络出现微弱波动，正在自动秒级重连...",
+                statusFailed: "连线失败，5秒后重试...",
+                statusWaitBlack: "已入房间【{room}】| 待ち方加入...",
+                statusWaitConnect: "已入房间【{room}】| 正在尝试建立连线...",
+                statusBackupMode: "【房号 {room}】🌐 已启动云端高可用防断线备用模式",
+                statusBackupRestored: "【房号 {room}】🌐 云端防断线备用模式已成功自动回复！",
+                
+                p2pStatus: "🟢 P2P 直连中",
+                cloudStatus: "🌐 云端连线中",
+                roomPrefix: "【房号 {room}】",
+                soloPrefix: "【单机】",
+                turnLabel: "轮到：",
+                redSide: "红方",
+                blackSide: "黑方",
+                yourTurn: "（到你行！）",
+                waitingOpponent: "（等紧对方...）",
+                
+                // 新增：How to play 簡中內容
+                howToPlayTitle: "如何玩中国象棋",
+                howToPlayContent: `
+                    <ul>
+                        <li><strong>核心目标：</strong> 以「将死」或「困毙」对方的帅/将为最终胜利条件。</li>
+                        <li><strong>帅／将：</strong> 只能在九宫格内直横移动一格。双方帅将不可在无棋子阻隔下在同一条直线上直接相对（飞将）。</li>
+                        <li><strong>仕／士：</strong> 只能在九宫格内的斜线上移动一格，负责贴身防卫。</li>
+                        <li><strong>相／象：</strong> 每次斜走两格（走「田」字），且不能过河。若田字正中央有棋子阻挡，则无法跳过（塞象眼）。</li>
+                        <li><strong>马：</strong> 走「日」字（先向前直/横走一格，再斜行一格）。若前进方向第一格有棋子，则无法跨越（别马腿）。</li>
+                        <li><strong>车：</strong> 可沿直线或横线移动任意格数，前方无阻挡时可直接吃子。</li>
+                        <li><strong>炮／炮：</strong> 移动规则与「车」相同，但吃子时必须横跨且仅横跨任何一方的一个棋子（炮打隔子）。</li>
+                        <li><strong>兵／卒：</strong> 未过河前每步只能向前行一格；越过河界后，可向前、左、右行一步，任何时候皆不能后退。</li>
+                    </ul>
+                `,
+                
+                docTitle: "工具与操作指南",
+                docP1: "欢迎使用网页版<strong>中国象棋</strong>即时连线对弈空间。本项目旨在为象棋爱好者提供一个流畅、免下载的楚河汉界在线博弈平台。",
+                docH3_1: "核心功能与操作技巧",
+                docLi1: "<strong>异地联机对战：</strong> 在连线面板输入相同的自定义房间号码，分别选择执红棋（帅方）或执黑棋（将方）入房，即可通过云端 MQTT 服务器建立点对点同步连线。",
+                docLi2: "<strong>合法走法提示：</strong> 点击棋子后，系统会自动根据“马走日、象走田、炮需隔子轰”等传统中国象棋常规行棋规则，高亮提示所有可移动的合法交叉点。",
+                docP2: "本应用完全基于前端 HTML5 结构与 Paho MQTT 协议构建，无后端数据库缓存，提供纯粹、安全、响应式的棋类推演工具。"
+            }
+        };
+
+        let currentLang = 'zh-HK';       
+        let currentStatusKey = 'statusSolo'; 
+
+        function switchGlobalLanguage(lang) {
+            if (!translations[lang]) return;
+            currentLang = lang;
+            const t = translations[lang];
+
+            document.title = t.title;
+            document.getElementById('main-heading').innerText = t.h1;
+            document.getElementById('room-input').placeholder = t.placeholder;
+            document.getElementById('btn-join-red').innerText = t.btnRed;
+            document.getElementById('btn-join-black').innerText = t.btnBlack;
+            document.getElementById('btn-game-restart').innerText = t.btnRestart;
+
+            updateStatusDisplay();
+
+            // 1. 動態渲染「How to Play」Accordion 內容
+            document.getElementById('summary-how-to-play').innerText = t.howToPlayTitle;
+            document.getElementById('content-how-to-play').innerHTML = t.howToPlayContent;
+
+            // 2. 動態渲染「工具與操作指南」Accordion 內容
+            document.getElementById('summary-guide').innerText = t.docTitle;
+            document.getElementById('content-guide').innerHTML = `
+                <p>${t.docP1}</p>
+                <h3>${t.docH3_1}</h3>
+                <ul>
+                    <li>${t.docLi1}</li>
+                    <li>${t.docLi2}</li>
+                </ul>
+                <p>${t.docP2}</p>
+            `;
+
+            document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
+            const activeBtn = document.getElementById('btn-' + lang);
+            if (activeBtn) activeBtn.classList.add('active');
+
+            document.documentElement.setAttribute('lang', lang);
+            localStorage.setItem('preferred-lang', lang);
+
+            renderBoard(); // 重新刷新棋盤與楚河漢界文字
+        }
+
+        function updateStatusDisplay() {
+            const t = translations[currentLang];
+            const statusDiv = document.getElementById('status');
+            
+            if (currentStatusKey === 'render') {
+                let turnTxt = turn === 'R' ? t.redSide : t.blackSide;
+                if (mySide !== 'BOTH') {
+                    let connText = isP2PConnected ? t.p2pStatus : t.cloudStatus;
+                    let actionText = turn === mySide ? t.yourTurn : t.waitingOpponent;
+                    statusDiv.innerHTML = `${t.roomPrefix.replace('{room}', roomNumber)} ${connText} | ${t.turnLabel}${turnTxt}${actionText}`;
+                } else {
+                    statusDiv.innerHTML = `${t.soloPrefix} ${t.turnLabel}${turnTxt}`;
+                }
+            } else {
+                let template = t[currentStatusKey] || "";
+                statusDiv.innerHTML = template.replace('{room}', roomNumber);
+            }
+        }
+
+        // ==================== 象棋核心邏輯 ====================
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         
         function playBeepSound() {
             if (audioCtx.state === 'suspended') audioCtx.resume();
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(600, audioCtx.currentTime); 
-            gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
-            gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.08); 
-            osc.connect(gain); gain.connect(audioCtx.destination);
-            osc.start(); osc.stop(audioCtx.currentTime + 0.08);
+            const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
+            osc.type = 'sine'; osc.frequency.setValueAtTime(600, audioCtx.currentTime); 
+            gain.gain.setValueAtTime(0.15, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.08); 
+            osc.connect(gain); gain.connect(audioCtx.destination); osc.start(); osc.stop(audioCtx.currentTime + 0.08);
         }
 
         function playVictorySound() {
             const notes = [523.25, 659.25, 783.99, 1046.50]; 
             notes.forEach((freq, index) => {
-                const osc = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(freq, audioCtx.currentTime + index * 0.08);
-                gain.gain.setValueAtTime(0.2, audioCtx.currentTime + index * 0.08);
-                gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.5 + index * 0.08);
-                osc.connect(gain); gain.connect(audioCtx.destination);
-                osc.start(audioCtx.currentTime + index * 0.08);
-                osc.stop(audioCtx.currentTime + 0.5 + index * 0.08);
+                const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
+                osc.type = 'sine'; osc.frequency.setValueAtTime(freq, audioCtx.currentTime + index * 0.08);
+                gain.gain.setValueAtTime(0.2, audioCtx.currentTime + index * 0.08); gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.5 + index * 0.08);
+                osc.connect(gain); gain.connect(audioCtx.destination); osc.start(audioCtx.currentTime + index * 0.08); osc.stop(audioCtx.currentTime + 0.5 + index * 0.08);
             });
         }
 
@@ -228,49 +533,30 @@
         ];
 
         let board = JSON.parse(JSON.stringify(initialBoard));
-        let turn = 'R'; 
-        let selectedIndex = null;
-        let validMoves = []; 
-        let gameActive = true;
-
-        let lastMove = null; 
-
-        let client = null;
-        let roomNumber = "";
-        let mySide = 'BOTH'; 
-        let isP2PConnected = false; 
-
-        let peerConnection = null;
-        let dataChannel = null;
-        const rtcConfig = {
-            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-        };
+        let turn = 'R'; let selectedIndex = null; let validMoves = []; let gameActive = true; let lastMove = null;
+        let client = null; let roomNumber = ""; let mySide = 'BOTH'; let isP2PConnected = false;
+        let peerConnection = null; let dataChannel = null;
+        const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
         const piecesLayer = document.getElementById('pieces-layer');
         const linesGrid = document.getElementById('lines-grid');
-        const statusDiv = document.getElementById('status');
         const inputArea = document.getElementById('input-area');
 
         function joinRoom(side) {
             if (audioCtx.state === 'suspended') audioCtx.resume();
-            
             const room = document.getElementById('room-input').value.trim();
-            if(!room) return alert("請輸入房號！");
-            roomNumber = room;
-            mySide = side;
+            if(!room) return alert(currentLang === 'en' ? "Please enter a room number!" : "請輸入房號！");
+            roomNumber = room; mySide = side;
 
-            statusDiv.innerText = "正在連線到安全雲端節點...";
+            currentStatusKey = 'statusConnecting'; updateStatusDisplay();
+
             const clientId = "xq_" + Math.random().toString(36).substring(7);
-            
             client = new Paho.MQTT.Client("broker.hivemq.com", Number(8884), clientId);
 
-            client.onConnectionLost = (responseObject) => { 
-                console.log("MQTT Connection Lost.");
+            client.onConnectionLost = (responseObject) => {
                 if (mySide !== 'BOTH' && !isP2PConnected) {
-                    statusDiv.innerText = "⚠️ 網絡出現微弱波動，正在自動秒級重連...";
-                    setTimeout(() => {
-                        if(client && !client.isConnected()) tryReconnect();
-                    }, 1000);
+                    currentStatusKey = 'statusLost'; updateStatusDisplay();
+                    setTimeout(() => { if(client && !client.isConnected()) tryReconnect(); }, 1000);
                 }
             };
 
@@ -278,14 +564,8 @@
                 const data = JSON.parse(message.payloadString);
                 if (data.sender === client.clientId) return; 
                 
-                if (data.type === 'GAME_MOVE' && !isP2PConnected) {
-                    handleIncomingGameData(data);
-                    return;
-                }
-                if (data.type === 'GAME_RESET' && !isP2PConnected) {
-                    handleIncomingGameData({ type: 'RESET' });
-                    return;
-                }
+                if (data.type === 'GAME_MOVE' && !isP2PConnected) { handleIncomingGameData(data); return; }
+                if (data.type === 'GAME_RESET' && !isP2PConnected) { handleIncomingGameData({ type: 'RESET' }); return; }
 
                 if (data.type === 'RTC_OFFER' && mySide === 'B') {
                     await initWebRTC(false);
@@ -293,20 +573,16 @@
                     const answer = await peerConnection.createAnswer();
                     await peerConnection.setLocalDescription(answer);
                     sendSignal({ type: 'RTC_ANSWER', answer: answer });
-                } 
-                else if (data.type === 'RTC_ANSWER' && mySide === 'R') {
+                } else if (data.type === 'RTC_ANSWER' && mySide === 'R') {
                     if(peerConnection) await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
-                } 
-                else if (data.type === 'RTC_ICE') {
+                } else if (data.type === 'RTC_ICE') {
                     if (peerConnection && peerConnection.remoteDescription) {
                         try { await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)); } catch(e){}
                     }
-                }
-                else if (data.type === 'BLACK_JOINED' && mySide === 'R') {
+                } else if (data.type === 'BLACK_JOINED' && mySide === 'R') {
                     initWebRTC(true);
                 }
             };
-
             doConnect();
         }
 
@@ -314,31 +590,23 @@
             client.connect({
                 onSuccess: () => {
                     client.subscribe("xiangqi/room/" + roomNumber);
-                    if (mySide === 'R') {
-                        statusDiv.innerText = `已入房間【${roomNumber}】| 等待黑方加入...`;
-                    } else {
-                        statusDiv.innerText = `已入房間【${roomNumber}】| 正在嘗試建立連線...`;
-                        sendSignal({ type: 'BLACK_JOINED' });
-                    }
-                    
+                    if (mySide === 'R') { currentStatusKey = 'statusWaitBlack'; } else { currentStatusKey = 'statusWaitConnect'; sendSignal({ type: 'BLACK_JOINED' }); }
+                    updateStatusDisplay();
+
                     setTimeout(() => {
                         if (!isP2PConnected && mySide !== 'BOTH') {
-                            statusDiv.innerText = `【房號 ${roomNumber}】🌐 已啟動雲端高可用防斷線備用模式`;
+                            currentStatusKey = 'statusBackupMode'; updateStatusDisplay();
                             document.getElementById('connection-panel').style.background = "#fff9e6";
-                            inputArea.style.display = 'none'; // 成功連線，隱藏輸入框與按鈕
-                            renderBoard();
+                            inputArea.style.display = 'none'; renderBoard();
                         }
                     }, 4000);
-
                     renderBoard();
                 },
                 onFailure: () => { 
-                    statusDiv.innerText = "連線失敗，5秒後重試..."; 
+                    currentStatusKey = 'statusFailed'; updateStatusDisplay();
                     setTimeout(doConnect, 5000);
                 },
-                useSSL: true,
-                keepAliveInterval: 30,
-                timeout: 10
+                useSSL: true, keepAliveInterval: 30, timeout: 10
             });
         }
 
@@ -348,13 +616,11 @@
                     onSuccess: () => {
                         client.subscribe("xiangqi/room/" + roomNumber);
                         if (isP2PConnected) return;
-                        statusDiv.innerText = `【房號 ${roomNumber}】🌐 雲端防斷線備用模式已成功自動回復！`;
-                        inputArea.style.display = 'none'; 
-                        renderBoard();
+                        currentStatusKey = 'statusBackupRestored'; updateStatusDisplay();
+                        inputArea.style.display = 'none'; renderBoard();
                     },
                     onFailure: () => { setTimeout(tryReconnect, 3000); },
-                    useSSL: true,
-                    keepAliveInterval: 30
+                    useSSL: true, keepAliveInterval: 30
                 });
             }
         }
@@ -362,119 +628,70 @@
         async function initWebRTC(isInitiator) {
             if(peerConnection) return;
             peerConnection = new RTCPeerConnection(rtcConfig);
-
-            peerConnection.onicecandidate = (event) => {
-                if (event.candidate) sendSignal({ type: 'RTC_ICE', candidate: event.candidate });
-            };
-
+            peerConnection.onicecandidate = (event) => { if (event.candidate) sendSignal({ type: 'RTC_ICE', candidate: event.candidate }); };
             peerConnection.onconnectionstatechange = () => {
                 if (peerConnection.connectionState === 'connected') {
                     isP2PConnected = true;
                     document.getElementById('connection-panel').style.background = "#e6ffe6";
-                    inputArea.style.display = 'none'; // 成功直連，隱藏輸入按鈕
-                    renderBoard();
+                    inputArea.style.display = 'none'; renderBoard();
                 }
             };
-
             if (isInitiator) {
-                dataChannel = peerConnection.createDataChannel("xiangqiGameChannel");
-                setupDataChannel();
-                const offer = await peerConnection.createOffer();
-                await peerConnection.setLocalDescription(offer);
+                dataChannel = peerConnection.createDataChannel("xiangqiGameChannel"); setupDataChannel();
+                const offer = await peerConnection.createOffer(); await peerConnection.setLocalDescription(offer);
                 sendSignal({ type: 'RTC_OFFER', offer: offer });
             } else {
-                peerConnection.ondatachannel = (event) => {
-                    dataChannel = event.channel;
-                    setupDataChannel();
-                };
+                peerConnection.ondatachannel = (event) => { dataChannel = event.channel; setupDataChannel(); };
             }
         }
 
         function setupDataChannel() {
-            dataChannel.onopen = () => {
-                isP2PConnected = true;
-                document.getElementById('connection-panel').style.background = "#e6ffe6";
-                inputArea.style.display = 'none'; // 成功直連，隱藏輸入按鈕
-                renderBoard();
-            };
-            dataChannel.onmessage = (event) => {
-                handleIncomingGameData(JSON.parse(event.data));
-            };
+            dataChannel.onopen = () => { isP2PConnected = true; document.getElementById('connection-panel').style.background = "#e6ffe6"; inputArea.style.display = 'none'; renderBoard(); };
+            dataChannel.onmessage = (event) => { handleIncomingGameData(JSON.parse(event.data)); };
         }
 
         function sendSignal(payload) {
             if (client && client.isConnected()) {
                 payload.sender = client.clientId;
                 const message = new Paho.MQTT.Message(JSON.stringify(payload));
-                message.destinationName = "xiangqi/room/" + roomNumber;
-                client.send(message);
+                message.destinationName = "xiangqi/room/" + roomNumber; client.send(message);
             }
         }
 
         function handleIncomingGameData(data) {
-            board = data.board;
-            turn = data.turn;
-            gameActive = data.gameActive;
-            selectedIndex = null;
-            validMoves = [];
-            lastMove = data.lastMove || null;
-
-            renderBoard();
-            playBeepSound(); 
-            if (!gameActive && data.winner) showGameOver(data.winner);
+            board = data.board; turn = data.turn; gameActive = data.gameActive; selectedIndex = null; validMoves = []; lastMove = data.lastMove || null;
+            renderBoard(); playBeepSound(); if (!gameActive && data.winner) showGameOver(data.winner);
         }
 
         function sendMoveData(finalWinner) {
-            const payload = {
-                type: 'GAME_MOVE',
-                board: board,
-                turn: turn,
-                gameActive: gameActive,
-                winner: finalWinner,
-                lastMove: lastMove
-            };
-
-            if (isP2PConnected && dataChannel && dataChannel.readyState === "open") {
-                dataChannel.send(JSON.stringify(payload));
-            } else {
-                sendSignal(payload); 
-            }
+            const payload = { type: 'GAME_MOVE', board: board, turn: turn, gameActive: gameActive, winner: finalWinner, lastMove: lastMove };
+            if (isP2PConnected && dataChannel && dataChannel.readyState === "open") { dataChannel.send(JSON.stringify(payload)); } else { sendSignal(payload); }
         }
 
         function sendResetSignal() {
-            if (isP2PConnected && dataChannel && dataChannel.readyState === "open") {
-                dataChannel.send(JSON.stringify({ type: 'RESET' }));
-            } else {
-                sendSignal({ type: 'GAME_RESET' });
-            }
+            if (isP2PConnected && dataChannel && dataChannel.readyState === "open") { dataChannel.send(JSON.stringify({ type: 'RESET' })); } else { sendSignal({ type: 'GAME_RESET' }); }
         }
 
         function checkGameOver() {
             let hasRedKing = false, hasBlackKing = false;
             for (let r = 0; r < 10; r++) {
                 for (let c = 0; c < 9; c++) {
-                    if (board[r][c] === 'R帥') hasRedKing = true;
-                    if (board[r][c] === 'B將') hasBlackKing = true;
+                    if (board[r][c] === 'R帥') hasRedKing = true; if (board[r][c] === 'B將') hasBlackKing = true;
                 }
             }
-            if (!hasRedKing) return 'B'; 
-            if (!hasBlackKing) return 'R'; 
-            return null;
+            if (!hasRedKing) return 'B'; if (!hasBlackKing) return 'R'; return null;
         }
 
         function showGameOver(winner) {
-            gameActive = false;
-            playVictorySound();
+            gameActive = false; playVictorySound();
             const title = document.getElementById('game-over-title');
-            title.innerText = winner === 'R' ? "紅方大獲全勝！" : "黑方大獲全勝！";
+            title.innerText = winner === 'R' ? translations[currentLang].gameOverRed : translations[currentLang].gameOverBlack;
             title.style.color = winner === 'R' ? "#cc0000" : "#000";
             document.getElementById('game-over-modal').style.display = 'flex';
         }
 
         function restartGame() {
-            if (mySide !== 'BOTH') {
-                sendResetSignal();
-            }
+            if (mySide !== 'BOTH') sendResetSignal();
             board = JSON.parse(JSON.stringify(initialBoard));
             turn = 'R'; gameActive = true; selectedIndex = null; validMoves = []; lastMove = null;
             document.getElementById('game-over-modal').style.display = 'none';
@@ -482,11 +699,9 @@
         }
 
         function isValidMove(fromR, fromC, toR, toC) {
-            const piece = board[fromR][fromC];
-            if (!piece) return false;
+            const piece = board[fromR][fromC]; if (!piece) return false;
             const color = piece[0], type = piece[1], target = board[toR][toC];
             if (target && target[0] === color) return false; 
-
             const dr = toR - fromR, dc = toC - fromC, absDr = Math.abs(dr), absDc = Math.abs(dc);
 
             function countPiecesBetween(fR, fC, tR, tC) {
@@ -515,51 +730,40 @@
                 case '象': case '相':
                     if (color === 'R' && toR < 5) return false;
                     if (color === 'B' && toR > 4) return false;
-                    if (absDr === 2 && absDc === 2) return !board[fromR + dr / 2][fromC + dc / 2];
-                    return false;
+                    if (absDr === 2 && absDc === 2) return !board[fromR + dr / 2][fromC + dc / 2]; return false;
                 case '馬':
                     if (absDr === 2 && absDc === 1) return !board[fromR + dr / 2][fromC];
-                    if (absDr === 1 && absDc === 2) return !board[fromR][fromC + dc / 2];
-                    return false;
+                    if (absDr === 1 && absDc === 2) return !board[fromR][fromC + dc / 2]; return false;
                 case '車':
-                    if (fromR !== toR && fromC !== toC) return false;
-                    return countPiecesBetween(fromR, fromC, toR, toC) === 0;
+                    if (fromR !== toR && fromC !== toC) return false; return countPiecesBetween(fromR, fromC, toR, toC) === 0;
                 case '砲': case '炮':
                     if (fromR !== toR && fromC !== toC) return false;
-                    const cnt = countPiecesBetween(fromR, fromC, toR, toC);
-                    if (!target) return cnt === 0;
-                    return cnt === 1;
+                    const cnt = countPiecesBetween(fromR, fromC, toR, toC); if (!target) return cnt === 0; return cnt === 1;
                 case '兵': case '卒':
                     if (color === 'R') {
-                        if (dr > 0) return false;
-                        if (fromR >= 5) return (dr === -1 && dc === 0);
-                        return (absDr + absDc === 1 && dr <= 0);
+                        if (dr > 0) return false; if (fromR >= 5) return (dr === -1 && dc === 0); return (absDr + absDc === 1 && dr <= 0);
                     } else {
-                        if (dr < 0) return false;
-                        if (fromR <= 4) return (dr === 1 && dc === 0);
-                        return (absDr + absDc === 1 && dr >= 0);
+                        if (dr < 0) return false; if (fromR <= 4) return (dr === 1 && dc === 0); return (absDr + absDc === 1 && dr >= 0);
                     }
-            }
-            return false;
+            } return false;
         }
 
         function getValidMoves(r, c) {
             let moves = [];
             for (let toR = 0; toR < 10; toR++) {
-                for (let toC = 0; toC < 9; toC++) {
-                    if (isValidMove(r, c, toR, toC)) moves.push({ row: toR, col: toC });
-                }
-            }
-            return moves;
+                for (let toC = 0; toC < 9; toC++) { if (isValidMove(r, c, toR, toC)) moves.push({ row: toR, col: toC }); }
+            } return moves;
         }
 
         function renderBoardLines() {
-            linesGrid.innerHTML = '';
-            let html = '';
+            linesGrid.innerHTML = ''; let html = '';
             for(let i=0; i<32; i++) html += '<div class="cell"></div>';
             
-            html += `<div class="river">楚河&nbsp;&nbsp;漢界</div>`;
+            let riverText = '楚河&nbsp;&nbsp;漢界';
+            if (currentLang === 'en') riverText = 'Chu River &nbsp;&nbsp; Han Border';
+            else if (currentLang === 'zh-CN') riverText = '楚河&nbsp;&nbsp;汉界';
             
+            html += `<div class="river">${riverText}</div>`;
             for(let i=0; i<32; i++) html += '<div class="cell"></div>';
             linesGrid.innerHTML = html;
         }
@@ -571,46 +775,26 @@
 
             for (let i = 0; i < 10; i++) {
                 for (let j = 0; j < 9; j++) {
-                    const r = isBlackView ? (9 - i) : i;
-                    const c = isBlackView ? (8 - j) : j;
-
-                    const intersection = document.createElement('div');
-                    intersection.className = 'intersection';
+                    const r = isBlackView ? (9 - i) : i; const c = isBlackView ? (8 - j) : j;
+                    const intersection = document.createElement('div'); intersection.className = 'intersection';
                     
                     const pieceText = board[r][c];
                     if (pieceText) {
-                        const pieceDiv = document.createElement('div');
-                        const isRed = pieceText.startsWith('R');
-                        pieceDiv.className = `piece ${isRed ? 'red' : 'black'}`;
-                        pieceDiv.innerText = pieceText.substring(1);
+                        const pieceDiv = document.createElement('div'); const isRed = pieceText.startsWith('R');
+                        pieceDiv.className = `piece ${isRed ? 'red' : 'black'}`; pieceDiv.innerText = pieceText.substring(1);
                         intersection.appendChild(pieceDiv);
                     }
-
-                    if (selectedIndex && selectedIndex.row === r && selectedIndex.col === c) {
-                        intersection.classList.add('selected');
-                    }
-
+                    if (selectedIndex && selectedIndex.row === r && selectedIndex.col === c) intersection.classList.add('selected');
                     if (lastMove && ((lastMove.from.row === r && lastMove.from.col === c) || (lastMove.to.row === r && lastMove.to.col === c))) {
                         intersection.classList.add('last-move');
                     }
-
-                    const isPossibleMove = validMoves.some(m => m.row === r && m.col === c);
-                    if (isPossibleMove) intersection.classList.add('highlight');
-
-                    intersection.addEventListener('click', () => handleCellClick(r, c));
-                    piecesLayer.appendChild(intersection);
+                    if (validMoves.some(m => m.row === r && m.col === c)) intersection.classList.add('highlight');
+                    intersection.addEventListener('click', () => handleCellClick(r, c)); piecesLayer.appendChild(intersection);
                 }
             }
             
-            let turnTxt = turn === 'R' ? "紅方" : "黑方";
-
-            if (mySide !== 'BOTH') {
-                let p2pStatus = isP2PConnected ? "🟢 P2P 直連中" : "🌐 雲端連線中";
-                statusDiv.innerHTML = `【房號 ${roomNumber}】${p2pStatus} | 輪到：${turnTxt} ${turn === mySide ? '（到你行！）' : '（等緊對方...）'}`;
-                inputArea.style.display = 'none'; // 安全計，每次重新 render 時確認連線就隱藏輸入框
-            } else {
-                statusDiv.innerHTML = `【單機】輪到：${turnTxt}`;
-            }
+            if (mySide !== 'BOTH') currentStatusKey = 'render';
+            updateStatusDisplay();
         }
 
         function handleCellClick(row, col) {
@@ -619,25 +803,14 @@
             const piece = board[row][col];
 
             if (selectedIndex) {
-                const isLegal = validMoves.some(m => m.row === row && m.col === col);
-                if (isLegal) {
-                    const movingPiece = board[selectedIndex.row][selectedIndex.col];
-
-                    lastMove = {
-                        from: { row: selectedIndex.row, col: selectedIndex.col },
-                        to: { row: row, col: col }
-                    };
-
-                    board[row][col] = movingPiece;
-                    board[selectedIndex.row][selectedIndex.col] = null;
-                    
+                if (validMoves.some(m => m.row === row && m.col === col)) {
+                    lastMove = { from: { row: selectedIndex.row, col: selectedIndex.col }, to: { row, col } };
+                    board[row][col] = board[selectedIndex.row][selectedIndex.col]; board[selectedIndex.row][selectedIndex.col] = null;
                     playBeepSound(); 
 
-                    const winner = checkGameOver();
-                    if (winner) gameActive = false; else turn = turn === 'R' ? 'B' : 'R';
-
+                    const winner = checkGameOver(); if (winner) gameActive = false; else turn = turn === 'R' ? 'B' : 'R';
                     selectedIndex = null; validMoves = [];
-                    renderBoard();
+                    currentStatusKey = 'render'; renderBoard();
                     
                     if (mySide !== 'BOTH') sendMoveData(winner); 
                     if (!gameActive) showGameOver(winner);
@@ -653,7 +826,17 @@
             }
         }
 
-        renderBoard();
+        window.onload = function() {
+            const savedLang = localStorage.getItem('preferred-lang');
+            if (savedLang) {
+                switchGlobalLanguage(savedLang);
+            } else {
+                const userLang = navigator.language || navigator.userLanguage;
+                if (userLang.startsWith('en')) switchGlobalLanguage('en');
+                else if (userLang.startsWith('zh-CN')) switchGlobalLanguage('zh-CN');
+                else switchGlobalLanguage('zh-HK');
+            }
+        }
     </script>
 </body>
 </html>
